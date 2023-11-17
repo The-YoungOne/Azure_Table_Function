@@ -5,13 +5,16 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Table;
 using Microsoft.Extensions.Logging;
+using System.Threading.Tasks;
+//using Microsoft.Azure.Cosmos.Table;
+
 
 namespace Table_Function
 {
     public class Function1
     {
         [FunctionName("Function1")]
-        public void Run([QueueTrigger("vaccination-queue", Connection = "storage_connection")]string myQueueItem, ILogger log, ExecutionContext context)
+        public async Task Run([QueueTrigger("vaccination-queue", Connection = "storage_connection")]string myQueueItem, ILogger log, ExecutionContext context)
         {
 
             //attempts to first connect to the queue storage
@@ -79,7 +82,19 @@ namespace Table_Function
                     log.LogInformation("\nInterting data into the table...");
                     Console.ForegroundColor = ConsoleColor.White;
 
-                    CloudStorageAccount account = CloudStorageAccount.Parse(connection);
+                    //links to the azure table account
+                    CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connection);
+
+                    //creates a client with reference to the table name to start inserting into
+                    CloudTableClient tableClient = storageAccount.CreateCloudTableClient();
+                    CloudTable table = tableClient.GetTableReference(tableName);
+                    
+                    if(!await table.ExistsAsync())
+                    {
+                        await table.CreateAsync();
+                    }
+
+
                 }
             }
             catch (Exception ex)
@@ -91,6 +106,11 @@ namespace Table_Function
 
             log.LogInformation($"C# Queue trigger function processed: {myQueueItem}");
         }
+
+    }
+
+    public class vaccinationEntity : TableEntity
+    {
 
     }
     public class Values
