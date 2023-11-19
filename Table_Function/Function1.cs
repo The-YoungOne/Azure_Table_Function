@@ -89,12 +89,16 @@ namespace Table_Function
                     CloudTableClient tableClient = storageAccount.CreateCloudTableClient();
                     CloudTable table = tableClient.GetTableReference(tableName);
                     
+                    //creates the table in an instance where it might not exist
                     if(!await table.ExistsAsync())
                     {
                         await table.CreateAsync();
                     }
 
+                    vaccinationEntity vaccinator = new vaccinationEntity(obj.id);
+                    TableOperation insertOp = TableOperation.Insert(vaccinator);
 
+                    _ = table.ExecuteAsync(insertOp);
                 }
             }
             catch (Exception ex)
@@ -104,14 +108,22 @@ namespace Table_Function
                 Console.ForegroundColor = ConsoleColor.White;
             }
 
-            log.LogInformation($"C# Queue trigger function processed: {myQueueItem}");
+            Console.ReadLine(); 
         }
 
     }
 
     public class vaccinationEntity : TableEntity
     {
+        public vaccinationEntity(string id) 
+        {
+            this.PartitionKey = "1";
+            this.RowKey = obj.id;
+        }
 
+        public string vaccine_center { get; set; }
+        public DateTime date { get; set; }
+        public int serial_number { get; set; }
     }
     public class Values
     {
