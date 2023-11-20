@@ -76,7 +76,7 @@ namespace Table_Function
                 vaccinationEntity vaccinator = new vaccinationEntity(obj.id)
                 {
                     vaccine_center = obj.vaccineCenter,
-                    date = DateTime.Parse(obj.date),
+                    date = obj.date,
                     serial_number = obj.serialNumber
                 };
 
@@ -103,7 +103,7 @@ namespace Table_Function
         }
 
         public string vaccine_center { get; set; }
-        public DateTime date { get; set; }
+        public string date { get; set; }
         public int serial_number { get; set; }
     }
     public class Values
