@@ -17,98 +17,79 @@ namespace Table_Function
         public async Task Run([QueueTrigger("vaccination-queue", Connection = "storage_connection")]string myQueueItem, ILogger log, ExecutionContext context)
         {
 
-            //attempts to first connect to the queue storage
             try
             {
-                //proceeds to read every message from the queue and break it up into an array of messages
-                Values obj = new Values();
-                Console.WriteLine(myQueueItem);
+                log.LogInformation($"Processing queue item: {myQueueItem}");
 
-                string[] split = myQueueItem.Split(':');
-                Console.WriteLine(split[0].Length);
-                if (split[0].Length == 13)
-                {
-                    obj.id = split[0];
-                    obj.vaccineCenter = split[1];
-                    obj.date = split[2];
-                    obj.serialNumber = int.Parse(split[3]);
-                }
-                else if (split[0].Length == 6)
-                {
-                    obj.serialNumber = int.Parse(split[0]);
-                    obj.date = split[1];
-                    obj.vaccineCenter = split[2];
-                    obj.id = split[3];
-                }
-                else
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    log.LogError($"Invaild Format: {myQueueItem}");
-                }
-
-                Console.ForegroundColor = ConsoleColor.Green;
-                log.LogInformation("Message(s) successfully read from the queue storage.");
-
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                log.LogInformation("\nGetting table name from secure location...");
-                Console.ForegroundColor = ConsoleColor.White;
-
-
-                //create a secure configuration connection to the local settings variables
+                //securely connectes to the local.settings.json
                 var config = new ConfigurationBuilder()
-                .SetBasePath(context.FunctionAppDirectory)
-                .AddJsonFile("local.settings.json", optional: true, reloadOnChange: true)
-                .AddEnvironmentVariables()
-                .Build();
+                    .SetBasePath(Environment.CurrentDirectory)
+                    .AddJsonFile("local.settings.json", optional: true, reloadOnChange: true)
+                    .AddEnvironmentVariables()
+                    .Build();
 
-                //gets the securely stored connection string
-                var connection = config.GetConnectionString("storage_connection");
+                // Gets the securely stored connection string and azure storage table name
+                var connection = config["Values:storage_connection"];
+                var tableName = config["Values:table_name"];
 
-                //gets the securely stored azure table name
-                var tableName = config.GetConnectionString("table_name");
+                CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connection);
+                CloudTableClient tableClient = storageAccount.CreateCloudTableClient();
+                CloudTable table = tableClient.GetTableReference(tableName);
 
-                if (String.IsNullOrEmpty(tableName))
+                //creates table storage if does not exist
+                if (!await table.ExistsAsync())
                 {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    log.LogError("The table name failed to be retreived!");
-                    Console.ForegroundColor = ConsoleColor.White;
+                    await table.CreateAsync();
+                }
+
+                // Split the message into parts based on ":"
+                var parts = myQueueItem.Split(':');
+
+                // Create an instance of the Values class
+                var obj = new Values();
+                if (parts[0].Length == 13)
+                {
+                    obj = new Values
+                    {
+                        id = parts[0],
+                        vaccineCenter = parts[1],
+                        date = parts[2],
+                        serialNumber = int.Parse(parts[3])
+                    };
+                }
+                else if (parts[0].Length == 6)
+                {
+                    obj = new Values
+                    {
+                        id = parts[3],
+                        vaccineCenter = parts[2],
+                        date = parts[1],
+                        serialNumber = int.Parse(parts[0])
+                    };
                 }
                 else
                 {
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    log.LogInformation("Table name securely retrieved.");
-
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    log.LogInformation("\nInterting data into the table...");
-                    Console.ForegroundColor = ConsoleColor.White;
-
-                    //links to the azure table account
-                    CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connection);
-
-                    //creates a client with reference to the table name to start inserting into
-                    CloudTableClient tableClient = storageAccount.CreateCloudTableClient();
-                    CloudTable table = tableClient.GetTableReference(tableName);
-                    
-                    //creates the table in an instance where it might not exist
-                    if(!await table.ExistsAsync())
-                    {
-                        await table.CreateAsync();
-                    }
-
-                    vaccinationEntity vaccinator = new vaccinationEntity(obj.id);
-                    TableOperation insertOp = TableOperation.Insert(vaccinator);
-
-                    _ = table.ExecuteAsync(insertOp);
+                    log.LogError("Invaild Format for: {myQueueItem}");
                 }
+
+                //creates table entity with values for entry
+                vaccinationEntity vaccinator = new vaccinationEntity(obj.id)
+                {
+                    vaccine_center = obj.vaccineCenter,
+                    date = DateTime.Parse(obj.date),
+                    serial_number = obj.serialNumber
+                };
+
+                //inserts into the table storage
+                TableOperation insertOp = TableOperation.Insert(vaccinator);
+                await table.ExecuteAsync(insertOp);
+
+                log.LogInformation($"Data inserted into the table for ID: {obj.id}");
             }
             catch (Exception ex)
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                log.LogError($"Error while executing the program!\n\nError: {ex}");
-                Console.ForegroundColor = ConsoleColor.White;
+                log.LogError($"Error while processing the queue item!\n\nError: {ex}");
             }
-
-            Console.ReadLine(); 
         }
 
     }
@@ -118,7 +99,7 @@ namespace Table_Function
         public vaccinationEntity(string id) 
         {
             this.PartitionKey = "1";
-            this.RowKey = obj.id;
+            this.RowKey = id;
         }
 
         public string vaccine_center { get; set; }
